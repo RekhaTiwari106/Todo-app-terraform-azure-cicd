@@ -1,20 +1,40 @@
-# Introduction 
-TODO: Give a short introduction of your project. Let this section explain the objectives or the motivation behind this project. 
+# Todo-App Infrastructure & CI/CD with Terraform on Azure
 
-# Getting Started
-TODO: Guide users through getting your code up and running on their own system. In this section you can talk about:
-1.	Installation process
-2.	Software dependencies
-3.	Latest releases
-4.	API references
+This repository contains the **Terraform infrastructure code** and **CI/CD workflows** for a Todo-App project. It demonstrates a complete end-to-end DevOps setup, including **multi-environment deployment**, **security scanning**, and **automation for frontend and backend deployments**.
 
-# Build and Test
-TODO: Describe and show how to build your code and run the tests. 
+## 🏗 Project Overview
 
-# Contribute
-TODO: Explain how other users and developers can contribute to make your code better. 
+The Todo-App consists of:
+- **Frontend:** React.js website
+- **Backend:** Python (Flask/FastAPI)
+- **Database:** MS SQL
+- **Infrastructure:** Azure
 
-If you want to learn more about creating good readme files then refer the following [guidelines](https://docs.microsoft.com/en-us/azure/devops/repos/git/create-a-readme?view=azure-devops). You can also seek inspiration from the below readme files:
-- [ASP.NET Core](https://github.com/aspnet/Home)
-- [Visual Studio Code](https://github.com/Microsoft/vscode)
-- [Chakra Core](https://github.com/Microsoft/ChakraCore)
+**Terraform manages:**
+- 1 Resource Group
+- 1 Virtual Network (VNet)
+- 2 Virtual Machines (VMs)
+- 1 MS SQL Server & Database
+- 1 Key Vault for secrets
+
+**Environments:**
+- **dev** – Development/testing environment for feature work
+- **prod** – Production-ready environment
+
+## ⚡ CI/CD Pipeline
+
+The repository uses **GitHub Actions** for CI/CD with the following features:
+
+1. **Terraform workflow**
+   - Reusable workflow for **dev** and **prod**
+   - Parameterized for multiple environments
+   - Automatic `terraform init`, `validate`, `plan`, and `apply`
+
+2. **Security Scanning**
+- **Checkov** – Scans Terraform for security & compliance issues
+   - **tfsec** – Checks Terraform for best practices
+   - Pipelines fail if critical security issues are found
+
+3. **Production Approval**
+   - Prod deployments require **manual approval** in GitHub Environments
+   - Ensures safe, controlled deployments
