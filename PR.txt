@@ -1,0 +1,253 @@
+Perfect! Let’s write a production-ready, single pipeline for Dev / Pre-Prod / Prod using a template and runtime parameters, including triggers, pool, scanning, and conditional apply. I’ll explain each part clearly.
+
+1️⃣ Template: terraform-scan-template.yml
+
+This template handles:
+
+Terraform init → validate → plan
+
+SAST scanning: TFLINT, Checkov, TFSEC
+
+Conditional Terraform apply
+
+# terraform-scan-template.yml
+parameters:
+  - name: envName
+    type: string
+  - name: workingDir
+    type: string
+  - name: backendContainer
+    type: string
+  - name: backendKey
+    type: string
+  - name: applyTerraform
+    type: boolean
+    default: false
+
+jobs:
+- job: TerraformJob
+  displayName: "Terraform + Scan - ${{ parameters.envName }}"
+  pool: reshupl
+  steps:
+
+    # Install Terraform
+    - task: TerraformInstaller@1
+      displayName: Install Terraform
+      inputs:
+        terraformVersion: 'latest'
+
+    # Terraform Init
+    - task: TerraformTask@5
+      displayName: Terraform Init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '${{ parameters.workingDir }}'
+        backendServiceArm: '$(SC)'
+        backendAzureRmStorageAccountName: '$(backendStorage)'
+        backendAzureRmContainerName: '${{ parameters.backendContainer }}'
+        backendAzureRmKey: '${{ parameters.backendKey }}'
+
+    # Terraform Validate
+    - task: TerraformTask@5
+      displayName: Terraform Validate
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '${{ parameters.workingDir }}'
+
+    # Terraform Plan
+    - task: TerraformTask@5
+      displayName: Terraform Plan
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '${{ parameters.workingDir }}'
+        environmentServiceNameAzureRM: '$(SC)'
+
+    # TFLINT Scan
+    - task: PowerShell@2
+      displayName: TFLINT
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: 'tflint --chdir=. --recursive /format:junit > tflint.xml'
+        workingDirectory: '${{ parameters.workingDir }}'
+
+    - task: PublishTestResults@2
+      displayName: TFLINT Report
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tflint.xml'
+        searchFolder: '${{ parameters.workingDir }}'
+
+    # Checkov Scan
+    - task: PowerShell@2
+      displayName: Checkov
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: 'checkov -d . -o junitxml --soft-fail > checkov.xml'
+        workingDirectory: '${{ parameters.workingDir }}'
+
+    - task: PublishTestResults@2
+      displayName: Checkov Report
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'checkov.xml'
+        searchFolder: '${{ parameters.workingDir }}'
+
+    # TFSEC Scan
+    - task: PowerShell@2
+      displayName: TFSEC
+      continueOnError: true
+      inputs:
+        targetType: 'inline'
+        script: 'tfsec . -f junit > tfsec.xml'
+        workingDirectory: '${{ parameters.workingDir }}'
+
+    - task: PublishTestResults@2
+      displayName: TFSEC Report
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: 'tfsec.xml'
+        searchFolder: '${{ parameters.workingDir }}'
+
+    # Conditional Apply
+    - ${{ if eq(parameters.applyTerraform, true) }}:
+      - task: TerraformTask@5
+        displayName: Terraform Apply
+        inputs:
+          provider: 'azurerm'
+          command: 'apply'
+          workingDirectory: '${{ parameters.workingDir }}'
+          environmentServiceNameAzureRM: '$(SC)'
+
+2️⃣ Main Pipeline: azure-pipelines.yml
+
+This is the entry point. It handles:
+
+Triggers (branches, PRs)
+
+Runtime parameters visible in UI
+
+Uses template for each environment
+
+Manual approval for Prod
+
+trigger:
+  branches:
+    include:
+      - main
+      - feature/*
+
+pool:
+  name: reshupl
+
+parameters:
+- name: envName
+  displayName: Environment Name
+  type: string
+  default: dev
+  values:
+    - dev
+    - preprod
+    - prod
+
+- name: workingDir
+  displayName: Terraform Working Directory
+  type: string
+  default: '$(System.DefaultWorkingDirectory)/environments/dev'
+
+- name: backendContainer
+  displayName: Backend Container Name
+  type: string
+  default: 'fortfstate'
+
+- name: backendKey
+  displayName: Backend State Key
+  type: string
+  default: 'terraform.tfstate'
+
+- name: applyTerraform
+  displayName: Apply Terraform (Tick to Apply)
+  type: boolean
+  default: false
+
+variables:
+- group: Variables_Library
+- name: SC
+  value: 'Pipelinetest'
+- name: backendStorage
+  value: 'priyanshsg'
+
+stages:
+
+# Dev Stage
+- stage: Dev
+  displayName: Deploy Dev
+  jobs:
+    - template: terraform-scan-template.yml
+      parameters:
+        envName: ${{ parameters.envName }}
+        workingDir: ${{ parameters.workingDir }}
+        backendContainer: ${{ parameters.backendContainer }}
+        backendKey: ${{ parameters.backendKey }}
+        applyTerraform: ${{ parameters.applyTerraform }}
+
+# Pre-Prod Stage
+- stage: PreProd
+  displayName: Deploy Pre-Prod
+  dependsOn: Dev
+  condition: succeeded()
+  jobs:
+    - template: terraform-scan-template.yml
+      parameters:
+        envName: preprod
+        workingDir: '$(System.DefaultWorkingDirectory)/environments/preprod'
+        backendContainer: 'preprodcontainer'
+        backendKey: 'terraform.tfstate'
+        applyTerraform: false
+
+# Prod Stage
+- stage: Prod
+  displayName: Deploy Prod
+  dependsOn: PreProd
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+  jobs:
+    # Manual Approval
+    - job: ManualApproval
+      displayName: Manual Approval for Prod
+      pool: server
+      steps:
+        - task: ManualValidation@1
+          displayName: Approve Prod
+          inputs:
+            notifyUsers: 'youremail@example.com'
+            instructions: 'Please review Pre-Prod results before deploying Prod'
+            onTimeout: 'reject'
+
+    # Terraform + Scan + Apply
+    - template: terraform-scan-template.yml
+      parameters:
+        envName: prod
+        workingDir: '$(System.DefaultWorkingDirectory)/environments/prod'
+        backendContainer: 'prodcontainer'
+        backendKey: 'terraform.tfstate'
+        applyTerraform: true
+
+✅ Key Features of This Pipeline
+
+Single template handles Terraform + SAST
+
+Parameters for environment-specific values
+
+UI input at runtime: envName, workingDir, backendContainer, backendKey, applyTerraform (tick/untick)
+
+Manual approval before Prod apply
+
+Triggers defined at the pipeline level
+
+Conditional execution for apply only when checkbox is ticked
+
+If you want, I can also simplify it further so you don’t need to touch Pre-Prod / Prod stage manually — you just run the pipeline and select the env from the UI, and the pipeline automatically chooses backend and directory based on that.

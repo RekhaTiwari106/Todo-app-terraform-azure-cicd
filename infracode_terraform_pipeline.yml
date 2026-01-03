@@ -1,0 +1,180 @@
+trigger:
+  branches:
+   include:
+   - feature/*
+
+# - pr:
+#   branches:
+#     include:
+#     - main
+
+pool:
+  name: reshupl # Self hosted agent pool
+
+variables:
+- group: Variables_Library    # WR =Working Directory VAR
+- name: SC
+  value: Pipelinetest   #SC =Service Connection Name VAR
+
+stages:
+
+- stage: Terraforminit
+  displayName: Terrraform Initialization & Planning
+  jobs:
+  - job: Init
+    displayName: terraform init
+    steps:
+    - task: TerraformInstaller@1
+      displayName: Terraform Install
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTask@5
+      displayName: Terraforminit init
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(WR)'
+        backendServiceArm: '$(SC)'
+        backendAzureRmStorageAccountName: 'priyanshsg'
+        backendAzureRmContainerName: 'fortfstate'
+        backendAzureRmKey: 'terraform.tfstate'
+
+    - task: TerraformTask@5
+      displayName: validate
+      inputs:
+        provider: 'azurerm'
+        command: 'validate'
+        workingDirectory: '$(WR)'
+
+- stage: TerraformPlan
+  displayName: Planning
+
+  jobs:
+  - job: Init
+    displayName: Plan
+    steps:
+
+    - task: TerraformTask@5
+      inputs:
+        provider: 'azurerm'
+        command: 'init'
+        workingDirectory: '$(WR)'
+        backendServiceArm: '$(SC)'
+        backendAzureRmStorageAccountName: 'priyanshsg'
+        backendAzureRmContainerName: 'fortfstate'
+        backendAzureRmKey: 'terraform.tfstate'
+
+    - task: TerraformTask@5
+      inputs:
+        provider: 'azurerm'
+        command: 'plan'
+        workingDirectory: '$(WR)'
+        environmentServiceNameAzureRM: '$(SC)'
+
+- stage: Scanning
+  displayName: SAST Scanning
+  dependsOn: TerraformPlan
+  jobs:
+   - job: SAST
+     pool: reshupl
+     displayName: SAST
+     steps:
+     - task: PublishTestResults@2
+       inputs:
+         testResultsFormat: 'JUnit'
+         testResultsFiles: 'tfsec.xml'
+         searchFolder: '''$(WR)'''
+
+
+
+
+     - task: PowerShell@2
+       displayName: TFLINT
+       continueOnError: True
+       inputs:
+         targetType: 'inline'
+         script: 'tflint --chdir=. --recursive /format:junit > tflint.xml'
+         workingDirectory: '$(WR)'
+
+     - task: PublishTestResults@2
+       displayName: TFLINT REPORT
+       inputs:
+         testResultsFormat: 'JUnit'
+         testResultsFiles: 'tflint.xml'
+         searchFolder: '$(WR)'
+         testRunTitle: 'Tflint Report'
+
+     - task: PowerShell@2
+       displayName: CHECKOV 
+       continueOnError: true
+       inputs:
+        targetType: 'inline'
+        script: 'checkov -d . -o junitxml --soft-fail > checkov.xml'
+        workingDirectory: '$(WR)'
+
+     - task: PublishTestResults@2
+       displayName: CHECKOV REPORT
+       inputs:
+          testResultsFormat: 'JUnit'
+          testResultsFiles: 'checkov.xml'
+          searchFolder: '$(WR)'
+          testRunTitle: 'Checkov Report'
+     - task: PowerShell@2
+       inputs:
+         targetType: 'inline'
+         script: 'tfsec . -f junit > tfsec.xml'
+         workingDirectory: '$(WR)'
+
+     - task: PublishTestResults@2
+       inputs:
+         testResultsFormat: 'JUnit'
+         testResultsFiles: 'tfsec.xml'
+         searchFolder: '$(WR)'
+
+
+
+- stage: MannualValidation
+  displayName: Validation
+  dependsOn: Scanning
+  jobs:
+  - job: Validation
+    displayName: MV
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      displayName: Mannual Approval
+      inputs:
+        notifyUsers: diwedirekha106@gmail.com
+        instructions: 'Please review the scan results and approve to continue'
+        onTimeout: 'reject'
+
+
+
+- stage: TerraformApply
+  displayName: Terraform Apply
+  dependsOn: MannualValidation
+  condition: eq(variables['Build.SourceBranch'], 'refs/heads/main')  # Only for main
+  jobs:
+   - job: Apply
+     displayName: Terraform Apply 
+     steps:
+      - task: TerraformTask@5
+        displayName: Terraforminit init
+        inputs:
+          provider: 'azurerm'
+          command: 'init'
+          workingDirectory: '$(WR)'
+          backendServiceArm: '$(SC)'
+          backendAzureRmStorageAccountName: 'priyanshsg'
+          backendAzureRmContainerName: 'fortfstate'
+          backendAzureRmKey: 'terraform.tfstate'
+
+      - task: TerraformTask@5
+        inputs:
+          provider: 'azurerm'
+          command: 'apply'
+          workingDirectory: '$(WR)'
+          environmentServiceNameAzureRM: 'Pipelinetest'
+
+      

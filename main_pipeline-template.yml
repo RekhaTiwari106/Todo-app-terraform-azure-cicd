@@ -1,0 +1,36 @@
+trigger:
+  branches:
+    include:
+      - feature/*
+      - main
+      
+pr:                         # <<< ADDED
+  branches:
+    include:
+      - main
+      - feature/*
+
+parameters:
+- name: environment
+  displayName: Select Environment
+  type: string
+  default: dev
+  values:
+    - dev
+    - prod
+
+pool:
+  name: reshupl
+
+variables:
+- name: SC
+  value: Pipelinetest
+- name: WR
+  value: $(System.DefaultWorkingDirectory)/environments/${{ parameters.environment }}
+
+stages:
+- template: /terraform-template.yml
+  parameters:
+    environment: ${{ parameters.environment }}
+    workingDirectory: $(WR)
+    serviceConnection: $(SC)

@@ -1,0 +1,179 @@
+# terraform-template.yml
+
+parameters:
+- name: environment
+  type: string
+- name: workingDirectory
+  type: string
+- name: serviceConnection
+  type: string
+
+stages:
+
+# ---------------- INIT & VALIDATE ----------------
+- stage: TerraformInit
+  displayName: Terraform Init & Validate
+  jobs:
+  - job: Init
+    steps:
+    - task: TerraformInstaller@1
+      inputs:
+        terraformVersion: 'latest'
+
+    - task: TerraformTask@5
+      displayName: Terraform Init
+      inputs:
+        provider: azurerm
+        command: init
+        workingDirectory: ${{ parameters.workingDirectory }}
+        backendServiceArm: ${{ parameters.serviceConnection }}
+        backendAzureRmStorageAccountName: priyanshsg${{ parameters.environment }}
+        backendAzureRmContainerName: fortfstate${{ parameters.environment }}
+        backendAzureRmKey: terraform${{ parameters.environment }}.tfstate
+
+    
+
+    - task: TerraformTask@5
+      displayName: Terraform Validate
+      inputs:
+        provider: azurerm
+        command: validate
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+# ---------------- PLAN ----------------
+- stage: TerraformPlan
+  dependsOn: TerraformInit
+  jobs:
+    - job: Plan
+      steps:
+        - task: TerraformTask@5
+          displayName: Terraform Init
+          inputs:
+            provider: azurerm
+            command: init
+            workingDirectory: ${{ parameters.workingDirectory }}
+            backendServiceArm: ${{ parameters.serviceConnection }}
+            backendAzureRmStorageAccountName: priyanshsg${{ parameters.environment }}
+            backendAzureRmContainerName: fortfstate${{ parameters.environment }}
+            backendAzureRmKey: terraform${{ parameters.environment }}.tfstate
+
+
+        - task: TerraformTask@5
+          displayName: Terraform Plan
+          inputs:
+            provider: 'azurerm'
+            command: 'plan'
+            environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+            workingDirectory: ${{ parameters.workingDirectory }}
+
+        # - task: TerraformTask@5
+        #   inputs:
+        #     provider: 'azurerm'
+        #     command: 'plan'
+        #     environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+
+
+        # - task: TerraformTask@5
+        #   displayName: Terraform Plan
+        #   inputs:
+        #     provider: azurerm
+        #     command: plan
+        #     workingDirectory: ${{ parameters.workingDirectory }}
+
+
+# ---------------- SAST ----------------
+- stage: Scanning
+  displayName: SAST Scanning
+  dependsOn: TerraformPlan
+  jobs:
+  - job: SAST
+    steps:
+    - task: PowerShell@2
+      displayName: TFLINT
+      continueOnError: true
+      inputs:
+        targetType: inline
+        script: |
+          tflint --recursive --format junit > tflint.xml
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: tflint.xml
+        searchFolder: ${{ parameters.workingDirectory }}
+
+    - task: PowerShell@2
+      displayName: CHECKOV
+      continueOnError: true
+      inputs:
+        targetType: inline
+        script: |
+          checkov -d . -o junitxml > checkov.xml
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: checkov.xml
+        searchFolder: ${{ parameters.workingDirectory }}
+
+    - task: PowerShell@2
+      displayName: TFSEC
+      inputs:
+        targetType: inline
+        script: |
+          tfsec . -f junit > tfsec.xml
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: PublishTestResults@2
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: tfsec.xml
+        searchFolder: ${{ parameters.workingDirectory }}
+
+# ---------------- MANUAL VALIDATION ----------------
+- stage: ManualValidation
+  displayName: Manual Approval
+  dependsOn: Scanning
+  condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+
+  jobs:
+  - job: Approval
+    pool: server
+    steps:
+    - task: ManualValidation@1
+      inputs:
+        notifyUsers: diwedirekha106@gmail.com
+        instructions: Please approve to continue
+        onTimeout: reject
+
+
+# ---------------- APPLY (MAIN ONLY) ----------------
+- stage: TerraformApply
+  displayName: Terraform Apply
+  dependsOn: ManualValidation
+  condition: and(succeeded(),eq(variables['Build.SourceBranch'], 'refs/heads/main'),ne(variables['Build.Reason'], 'PullRequest'))
+  jobs:
+  - job: Apply
+    steps:
+    
+    - task: TerraformTask@5
+      displayName: Terraform Init
+      inputs:
+        provider: azurerm
+        command: init
+        workingDirectory: ${{ parameters.workingDirectory }}
+        backendServiceArm: ${{ parameters.serviceConnection }}
+        backendAzureRmStorageAccountName: priyanshsg${{ parameters.environment }}
+        backendAzureRmContainerName: fortfstate${{ parameters.environment }}
+        backendAzureRmKey: terraform${{ parameters.environment }}.tfstate
+
+
+    - task: TerraformTask@5
+      inputs:
+        provider: azurerm
+        command: apply
+        workingDirectory: ${{ parameters.workingDirectory }}
+        environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
+
