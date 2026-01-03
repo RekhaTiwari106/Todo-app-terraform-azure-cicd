@@ -4,7 +4,7 @@ trigger:
       - feature/*
       - main
       
-pr:                         # <<< ADDED
+pr:                         # <<< ADDED my name is anthony 
   branches:
     include:
       - main
