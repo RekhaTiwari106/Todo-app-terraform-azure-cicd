@@ -7,7 +7,7 @@ terraform {
   }
   backend "azurerm" {
     resource_group_name  = "rg01"            # RG jisme storage account bana hai
-    storage_account_name = "priyanshsg"  # Storage account ka naam
+    storage_account_name = "priyanshsg05012026"  # Storage account ka naam
     container_name       = "fortfstate"   # Container jisme state file hogi
     key                  = "terraform.tfstate" # State file ka naam
   }
@@ -15,5 +15,5 @@ terraform {
 
 provider "azurerm" {
   features {}
-  subscription_id = "eac08841-5119-4501-b5ac-82e7a5d29114"
+  subscription_id = "6aa54bfd-6d64-4af4-b65a-f9a6b4ebcedf"
 }

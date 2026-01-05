@@ -1,26 +1,28 @@
 rgs = {
   rgs1 = {
-    name                     = "resourcegrouprekha"
+    name                     = "rg01"
     location                 = "centralindia"
-    account_tier             = "Standard"
-    account_replication_type = "LRS"
-
   }
 }
 
 storage_accounts = {
   sa1 = {
-    name                     = "storageaccount291125"
-    resource_group_name      = "resourcegrouprekha"
+    sg_name                  = "priyanshsg05012026"
+    resource_group_name      = "rg01"
     location                 = "centralindia"
     account_tier             = "Standard"
     account_replication_type = "LRS"
-    tags = {
-      env = "dev"
-    }
-  }
 
+    tags = {
+      environment = "dev"
+      owner       = "team-a"
+    }
+
+    container_name        = "fortfstate"
+    container_access_type = "private"
+  }
 }
+
 virtual_network_test = {
   vnet1 = {
     name                = "vnet_rekha"
@@ -45,7 +47,7 @@ vms = {
     subnet_name          = "subnet_rekha"
     virtual_network_name = "vnet_rekha"
     location             = "centralindia"
-    resource_group_name  = "resourcegrouprekha"
+    resource_group_name  = "rg01"
     nic_name             = "nic-frontend-vm"
   }
 
@@ -54,7 +56,7 @@ vms = {
     subnet_name          = "subnet_rekha2"
     virtual_network_name = "vnet_rekha"
     location             = "centralindia"
-    resource_group_name  = "resourcegrouprekha"
+    resource_group_name  = "rg01"
     nic_name             = "nic-backend-vm"
   }
 }
@@ -66,7 +68,7 @@ mysqlserver = {
     # SQL SERVER
     # =========================
     name                = "dev-sql-server231225"
-    resource_group_name = "resourcegrouprekha"
+    resource_group_name = "rg01"
     location            = "centralindia"
     version             = "12.0"
 
