@@ -1,3 +1,5 @@
+
+
 resource "azurerm_mssql_server" "sql_server" {
   for_each = var.mysqlserver
 
@@ -8,13 +10,8 @@ resource "azurerm_mssql_server" "sql_server" {
   version             = lookup(each.value, "version", "12.0")
 
   # SQL Authentication (optional)
-  administrator_login = lookup(each.value, "administrator_login", null)
-
-  administrator_login_password = (
-    lookup(each.value, "administrator_login_password", null) != null
-    ? each.value.administrator_login_password
-    : null
-  )
+  administrator_login = data.azurerm_key_vault_secret.username.value
+  administrator_login_password = data.azurerm_key_vault_secret.Password.value
 
   # Security & Network
   minimum_tls_version                      = lookup(each.value, "minimum_tls_version", "1.2")

@@ -1,9 +1,10 @@
+
 data "azurerm_client_config" "current" {}
 
-resource "azurerm_key_vault" "Kayvault" {
-  name                        = "keyvault291125"
-  location                    ="centralindia"
-  resource_group_name         = "resourcegrouprekha"
+resource "azurerm_key_vault" "kv" {
+  name                        = "kv-test06012026"
+  location                    = "centralindia"
+  resource_group_name         = "rg01"
   enabled_for_disk_encryption = true
   tenant_id                   = data.azurerm_client_config.current.tenant_id
   soft_delete_retention_days  = 7
@@ -19,9 +20,14 @@ resource "azurerm_key_vault" "Kayvault" {
       "Get",
     ]
 
-    secret_permissions = [
-      "Get",
-    ]
+  secret_permissions = [
+    "Get",
+    "List",
+    "Set",
+    "Delete",
+
+  ]
+
 
     storage_permissions = [
       "Get",

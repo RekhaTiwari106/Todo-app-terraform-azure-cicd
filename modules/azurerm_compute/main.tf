@@ -1,13 +1,4 @@
 
-
-data "azurerm_subnet" "data" {
-  for_each             = var.vms
-  name                 = each.value.subnet_name
-  virtual_network_name = each.value.virtual_network_name
-  resource_group_name  = each.value.resource_group_name
-}
-
-
 resource "azurerm_network_interface" "NIC" {
   depends_on = [data.azurerm_subnet.data]
   for_each            = var.vms
@@ -28,8 +19,8 @@ resource "azurerm_linux_virtual_machine" "VM" {
   resource_group_name             = each.value.resource_group_name
   location                        = each.value.location
   size                            = "Standard_B1s"
-  admin_username                  = "adminuser"
-  admin_password                  = "P@ssword1234!"
+  admin_username                  = data.azurerm_key_vault_secret.username.value
+  admin_password                  = data.azurerm_key_vault_secret.Password.value
   disable_password_authentication = false
   network_interface_ids = [
     azurerm_network_interface.NIC[each.key].id,
