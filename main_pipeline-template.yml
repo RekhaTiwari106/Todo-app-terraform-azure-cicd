@@ -24,7 +24,7 @@ pool:
 
 variables:
 - name: SC
-  value: Pipelinetest
+  value: pipelinetest
 - name: WR
   value: $(System.DefaultWorkingDirectory)/environments/${{ parameters.environment }}
 
