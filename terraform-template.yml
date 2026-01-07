@@ -10,13 +10,15 @@ parameters:
 
 stages:
 
-# ---------------- INIT & VALIDATE ----------------
-- stage: TerraformInit
-  displayName: Terraform Init & Validate
+# ---------------- Terraform-Init-FMT-Validate ----------------
+- stage: Validate
+  displayName: Format & validate
   jobs:
-  - job: Init
+  - job: Terraform Validate
+    displayName: Terraform Validate
     steps:
     - task: TerraformInstaller@1
+      displayName: TerraformInstaller
       inputs:
         terraformVersion: 'latest'
 
@@ -31,7 +33,6 @@ stages:
         backendAzureRmContainerName: fortfstate${{ parameters.environment }}
         backendAzureRmKey: terraform${{ parameters.environment }}.tfstate
 
-    
 
     - task: TerraformTask@5
       displayName: Terraform Validate
@@ -40,9 +41,66 @@ stages:
         command: validate
         workingDirectory: ${{ parameters.workingDirectory }}
 
+# ---------------- Static Analysis Stage ----------------
+- stage: Scanning
+  displayName: Static Analysis Stage
+  dependsOn: Validate
+  jobs:
+  - job: SAST
+    displayName: Code Analysis
+    steps:
+    - task: PowerShell@2
+      displayName: TFLINT
+      continueOnError: true
+      inputs:
+        targetType: inline
+        script: |
+          tflint --recursive --format junit > tflint.xml
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: PublishTestResults@2
+      displayName: PublishResults TFLINT
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: tflint.xml
+        searchFolder: ${{ parameters.workingDirectory }}
+
+    - task: PowerShell@2
+      displayName: CHECKOV
+      continueOnError: true
+      inputs:
+        targetType: inline
+        script: |
+          checkov -d . -o junitxml > checkov.xml
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: PublishTestResults@2
+      displayName: PublishResults CHECKOV
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: checkov.xml
+        searchFolder: ${{ parameters.workingDirectory }}
+
+    - task: PowerShell@2
+      displayName: TFSEC
+      inputs:
+        targetType: inline
+        script: |
+          tfsec . -f junit > tfsec.xml
+        workingDirectory: ${{ parameters.workingDirectory }}
+
+    - task: PublishTestResults@2
+      displayName: PublishResults CHECKOV
+      inputs:
+        testResultsFormat: JUnit
+        testResultsFiles: tfsec.xml
+        searchFolder: ${{ parameters.workingDirectory }}
+
+
 # ---------------- PLAN ----------------
 - stage: TerraformPlan
-  dependsOn: TerraformInit
+  displayName: Plan & Review Stage
+  dependsOn: Scanning
   jobs:
     - job: Plan
       steps:
@@ -66,76 +124,24 @@ stages:
             environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
             workingDirectory: ${{ parameters.workingDirectory }}
 
-        # - task: TerraformTask@5
-        #   inputs:
-        #     provider: 'azurerm'
-        #     command: 'plan'
-        #     environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
-
-
-        # - task: TerraformTask@5
-        #   displayName: Terraform Plan
-        #   inputs:
-        #     provider: azurerm
-        #     command: plan
-        #     workingDirectory: ${{ parameters.workingDirectory }}
-
-
-# ---------------- SAST ----------------
-- stage: Scanning
-  displayName: SAST Scanning
-  dependsOn: TerraformPlan
+# ---------------- InfraCost ----------------
+- stage: CostStage
+  displayName: Cost and Impact Assessment Stage
   jobs:
-  - job: SAST
+  - job: InfraCost
+    displayName: InfraCost
     steps:
     - task: PowerShell@2
-      displayName: TFLINT
-      continueOnError: true
+      displayName: InfraCost
       inputs:
         targetType: inline
-        script: |
-          tflint --recursive --format junit > tflint.xml
+        script: infracost breakdown --path .
         workingDirectory: ${{ parameters.workingDirectory }}
-
-    - task: PublishTestResults@2
-      inputs:
-        testResultsFormat: JUnit
-        testResultsFiles: tflint.xml
-        searchFolder: ${{ parameters.workingDirectory }}
-
-    - task: PowerShell@2
-      displayName: CHECKOV
-      continueOnError: true
-      inputs:
-        targetType: inline
-        script: |
-          checkov -d . -o junitxml > checkov.xml
-        workingDirectory: ${{ parameters.workingDirectory }}
-
-    - task: PublishTestResults@2
-      inputs:
-        testResultsFormat: JUnit
-        testResultsFiles: checkov.xml
-        searchFolder: ${{ parameters.workingDirectory }}
-
-    - task: PowerShell@2
-      displayName: TFSEC
-      inputs:
-        targetType: inline
-        script: |
-          tfsec . -f junit > tfsec.xml
-        workingDirectory: ${{ parameters.workingDirectory }}
-
-    - task: PublishTestResults@2
-      inputs:
-        testResultsFormat: JUnit
-        testResultsFiles: tfsec.xml
-        searchFolder: ${{ parameters.workingDirectory }}
 
 # ---------------- MANUAL VALIDATION ----------------
 - stage: ManualValidation
-  displayName: Manual Approval
-  dependsOn: Scanning
+  displayName: Approval And Governance Stage
+  dependsOn: Plan
   condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
 
   jobs:
@@ -143,15 +149,15 @@ stages:
     pool: server
     steps:
     - task: ManualValidation@1
+      displayName: ManualValidation
       inputs:
         notifyUsers: diwedirekha106@gmail.com
         instructions: Please approve to continue
         onTimeout: reject
 
-
 # ---------------- APPLY (MAIN ONLY) ----------------
 - stage: TerraformApply
-  displayName: Terraform Apply
+  displayName: Deploy/Apply
   dependsOn: ManualValidation
   condition: and(succeeded(),eq(variables['Build.SourceBranch'], 'refs/heads/main'),ne(variables['Build.Reason'], 'PullRequest'))
   jobs:
